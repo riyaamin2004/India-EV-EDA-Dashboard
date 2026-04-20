@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import io
 
-# --- STEP 1: CREATE THE DATASET (FOR EDA PURPOSES) ---
-def create_dataset():
-    # Real-world approximate data for India EV Market (2024-2025)
+# --- 1. DATASET GENERATION (Embedded for Easy EDA) ---
+def load_data():
+    # This represents real-world trends for India EV Market 2024-25
     data = {
         'State': ['Uttar Pradesh', 'Maharashtra', 'Karnataka', 'Tamil Nadu', 'Bihar', 
                   'Rajasthan', 'Gujarat', 'Delhi', 'Kerala', 'Madhya Pradesh'],
@@ -17,82 +16,85 @@ def create_dataset():
     }
     df = pd.DataFrame(data)
     df['Total_EVs'] = df['Two_Wheelers'] + df['Four_Wheelers'] + df['Three_Wheelers']
-    df.to_csv("india_ev_data.csv", index=False)
     return df
 
-df = create_dataset()
+df = load_data()
 
-# --- STEP 2: DASHBOARD UI ---
-st.set_page_config(page_title="EV EDA Dashboard", layout="wide")
-st.title("📊 Exploratory Data Analysis: India's EV Landscape")
-st.markdown("Analyzing the relationship between state-wise adoption and infrastructure.")
+# --- 2. PAGE CONFIGURATION ---
+st.set_page_config(page_title="India EV EDA Dashboard", layout="wide", page_icon="⚡")
 
-# Sidebar for EDA Controls
-st.sidebar.header("EDA Settings")
-st.sidebar.write("Dataset: `india_ev_data.csv`")
-show_raw_data = st.sidebar.checkbox("Show Raw Dataset")
+# Custom CSS for styling
+st.markdown("""
+    <style>
+    .main { background-color: #f5f7f9; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    </style>
+    """, unsafe_with_html=True)
 
-# --- STEP 3: KPI SUMMARY ---
-total_sales = df['Total_EVs'].sum()
-avg_stations = df['Charging_Stations'].mean()
-top_state = df.loc[df['Total_EVs'].idxmax(), 'State']
+st.title("⚡ India Electric Vehicle (EV) Adoption EDA")
+st.markdown("An Exploratory Data Analysis of state-wise growth and infrastructure distribution.")
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Total EV Registrations", f"{total_sales:,}")
-col2.metric("Avg Charging Stations/State", f"{int(avg_stations)}")
-col3.metric("Market Leader", top_state)
+# --- 3. SIDEBAR CONTROLS ---
+st.sidebar.header("Filter Options")
+selected_state = st.sidebar.multiselect("Select States to Compare", options=df['State'].unique(), default=df['State'].unique())
+filtered_df = df[df['State'].isin(selected_state)]
 
-st.divider()
+st.sidebar.divider()
+st.sidebar.info("This dashboard uses approximate 2024-25 market data for academic EDA purposes.")
 
-# --- STEP 4: VISUAL ANALYSIS ---
-
-# Row 1: Distribution & Rankings
-row1_1, row1_2 = st.columns(2)
-
-with row1_1:
-    st.subheader("📍 State-wise Sales vs Stations")
-    # Comparing two variables (Sales vs Infra)
-    fig_scatter = px.scatter(df, x="Charging_Stations", y="Total_EVs", 
-                             size="Total_EVs", color="State", hover_name="State",
-                             title="Correlation: Infra vs Sales",
-                             labels={"Charging_Stations": "Public Charging Points"})
-    st.plotly_chart(fig_scatter, use_container_width=True)
-
-with row1_2:
-    st.subheader("🏆 Sales Leaderboard")
-    fig_bar = px.bar(df.sort_values('Total_EVs', ascending=False), 
-                     x='State', y='Total_EVs', color='Total_EVs',
-                     title="Total EV Adoption by State")
-    st.plotly_chart(fig_bar, use_container_width=True)
+# --- 4. KPI METRICS ---
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Total EV Registrations", f"{filtered_df['Total_EVs'].sum():,}")
+col2.metric("Top State", filtered_df.loc[filtered_df['Total_EVs'].idxmax(), 'State'])
+col3.metric("Total Charging Points", f"{filtered_df['Charging_Stations'].sum():,}")
+col4.metric("Avg. EVs per State", f"{int(filtered_df['Total_EVs'].mean()):,}")
 
 st.divider()
 
-# Row 2: Composition Analysis
-row2_1, row2_2 = st.columns(2)
+# --- 5. CHARTS SECTION ---
 
-with row2_1:
-    st.subheader("🏍️ Vehicle Category Mix")
-    # Melt data for stacked bar (Good for EDA)
-    df_melted = df.melt(id_vars=['State'], value_vars=['Two_Wheelers', 'Three_Wheelers', 'Four_Wheelers'], 
-                        var_name='Vehicle_Type', value_name='Count')
-    fig_stack = px.bar(df_melted, x='State', y='Count', color='Vehicle_Type', 
-                       title="Market Segment Distribution", barmode='stack')
-    st.plotly_chart(fig_stack, use_container_width=True)
+# Row 1: Sales vs Infrastructure
+c1, c2 = st.columns(2)
 
-with row2_2:
-    st.subheader("🥧 National Market Share")
-    total_types = [df['Two_Wheelers'].sum(), df['Three_Wheelers'].sum(), df['Four_Wheelers'].sum()]
-    labels = ['2-Wheelers', '3-Wheelers', '4-Wheelers']
-    fig_pie = px.pie(values=total_types, names=labels, hole=0.5, 
-                     color_discrete_sequence=px.colors.sequential.RdBu)
-    st.plotly_chart(fig_pie, use_container_width=True)
+with c1:
+    st.subheader("🏆 Total EV Adoption by State")
+    fig1 = px.bar(filtered_df.sort_values('Total_EVs', ascending=False), 
+                  x='State', y='Total_EVs', color='Total_EVs',
+                  color_continuous_scale='GnBu', template='plotly_white')
+    st.plotly_chart(fig1, use_container_width=True)
 
-# --- STEP 5: RAW DATA VIEW ---
-if show_raw_data:
-    st.subheader("📄 Dataset Preview")
-    st.dataframe(df)
-    
-    # Download button for the project report
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download CSV for Project Report", data=csv, 
-                       file_name="india_ev_eda_data.csv", mime="text/csv")
+with c2:
+    st.subheader("🔌 Charging Station Distribution")
+    fig2 = px.bar(filtered_df.sort_values('Charging_Stations', ascending=False), 
+                  x='State', y='Charging_Stations', 
+                  color_discrete_sequence=['#ff7f0e'], template='plotly_white')
+    st.plotly_chart(fig2, use_container_width=True)
+
+st.divider()
+
+# Row 2: Deep Dive Analysis
+c3, c4 = st.columns(2)
+
+with c3:
+    st.subheader("📉 Infrastructure vs. Sales Correlation")
+    fig3 = px.scatter(filtered_df, x="Charging_Stations", y="Total_EVs", 
+                      size="Total_EVs", color="State", hover_name="State",
+                      trendline="ols", # Adds a linear regression trend line for EDA
+                      template='plotly_white')
+    st.plotly_chart(fig3, use_container_width=True)
+
+with c4:
+    st.subheader("🏍️ Market Segment Breakdown")
+    # We aggregate the totals for the pie chart
+    segment_totals = {
+        '2-Wheelers': filtered_df['Two_Wheelers'].sum(),
+        '3-Wheelers': filtered_df['Three_Wheelers'].sum(),
+        '4-Wheelers': filtered_df['Four_Wheelers'].sum()
+    }
+    fig4 = px.pie(names=list(segment_totals.keys()), values=list(segment_totals.values()),
+                  hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+    st.plotly_chart(fig4, use_container_width=True)
+
+# --- 6. RAW DATA TABLE ---
+with st.expander("Explore Raw Data"):
+    st.dataframe(filtered_df.sort_values('Total_EVs', ascending=False), use_container_width=True)
