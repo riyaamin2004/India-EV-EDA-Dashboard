@@ -2,95 +2,83 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# --- 1. SETTINGS & STYLING ---
-st.set_page_config(page_title="India EV Market EDA", layout="wide")
+# --- 1. PAGE SETTINGS ---
+st.set_page_config(page_title="India EV Analysis", layout="wide")
 
-st.markdown("""
-    <style>
-    .main { background-color: #f0f2f6; }
-    div.stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e1e4e8; }
-    </style>
-    """, unsafe_with_html=True)
+st.title("📊 India Electric Vehicle (EV) EDA Dashboard")
+st.markdown("Using real-world market data to analyze adoption trends across states and categories.")
 
-# --- 2. LOAD DATA ---
+# --- 2. DATA LOADING ---
 @st.cache_data
 def load_data():
     try:
-        # Tries to load your Kaggle file
+        # This looks for the CSV file in your GitHub folder
         df = pd.read_csv("india_ev_data.csv")
-        # Standardizing column names for consistency
-        df.columns = [c.replace(' ', '_').strip() for c in df.columns]
         return df
-    except:
-        st.error("⚠️ Dataset not found. Please upload 'india_ev_data.csv' to your GitHub.")
-        return pd.DataFrame()
+    except FileNotFoundError:
+        st.error("❌ **Dataset Not Found!** Please upload 'india_ev_data.csv' to your GitHub repository.")
+        return None
 
 df = load_data()
 
-if not df.empty:
-    # --- 3. SIDEBAR FILTERS ---
-    st.sidebar.header("🔍 EDA Filters")
+# --- 3. DASHBOARD LOGIC ---
+if df is not None:
+    # Sidebar Filters
+    st.sidebar.header("Filter Analytics")
     
-    # Dynamically find columns for filtering
+    # Selecting State (Automatically finds the 'State' column)
     state_col = [c for c in df.columns if 'State' in c or 'UT' in c][0]
-    year_col = [c for c in df.columns if 'Year' in c][0]
-    sales_col = [c for c in df.columns if 'Sales' in c or 'Quantity' in c][0]
-    cat_col = [c for c in df.columns if 'Category' in c or 'Type' in c][0]
+    all_states = sorted(df[state_col].unique())
+    selected_states = st.sidebar.multiselect("Select States", options=all_states, default=all_states[:5])
 
-    states = st.sidebar.multiselect("Select States", options=sorted(df[state_col].unique()), default=df[state_col].unique()[:5])
-    years = st.sidebar.slider("Select Year Range", int(df[year_col].min()), int(df[year_col].max()), (2020, 2024))
+    # Filter Data based on Selection
+    filtered_df = df[df[state_col].isin(selected_states)]
 
-    # Apply Filters
-    mask = (df[state_col].isin(states)) & (df[year_col].between(years[0], years[1]))
-    filtered_df = df[mask]
+    # --- 4. KPI SUMMARY ---
+    # We identify numeric columns for sales/counts
+    num_cols = filtered_df.select_dtypes(include=['number']).columns
+    total_sales = filtered_df[num_cols[0]].sum() if len(num_cols) > 0 else 0
 
-    # --- 4. DASHBOARD HEADER ---
-    st.title("📊 India EV Market - Exploratory Data Analysis")
-    st.markdown(f"Performing analysis from **{years[0]}** to **{years[1]}** across **{len(states)}** states.")
-
-    # KPI Metrics
-    m1, m2, m3 = st.columns(3)
-    total_sales = filtered_df[sales_col].sum()
-    m1.metric("Total EV Sales", f"{total_sales:,}")
-    m2.metric("Leading Category", filtered_df.groupby(cat_col)[sales_col].sum().idxmax())
-    m3.metric("Top Growth State", filtered_df.groupby(state_col)[sales_col].sum().idxmax())
+    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1.metric("Total EVs in Selection", f"{total_sales:,}")
+    kpi2.metric("States Analyzed", len(selected_states))
+    kpi3.metric("Data Source", "Kaggle / Vahan")
 
     st.divider()
 
-    # --- 5. VISUALIZATIONS (The EDA Core) ---
+    # --- 5. VISUALIZATIONS ---
     row1_left, row1_right = st.columns(2)
 
     with row1_left:
-        st.subheader("📈 Sales Growth Over Time")
-        # Line chart showing trends
-        trend_df = filtered_df.groupby(year_col)[sales_col].sum().reset_index()
-        fig_line = px.line(trend_df, x=year_col, y=sales_col, markers=True, 
-                           template="plotly_white", line_shape="spline")
-        st.plotly_chart(fig_line, use_container_width=True)
-
-    with row1_right:
-        st.subheader("🏁 State-wise Competition")
-        # Bar chart for state comparison
-        state_comp = filtered_df.groupby(state_col)[sales_col].sum().reset_index().sort_values(sales_col)
-        fig_bar = px.bar(state_comp, x=sales_col, y=state_col, orientation='h', color=sales_col)
+        st.subheader("🏁 State-wise Comparison")
+        # Creating a bar chart of the first numeric column vs State
+        fig_bar = px.bar(filtered_df, x=state_col, y=num_cols[0], 
+                         color=num_cols[0], color_continuous_scale='Turbo')
         st.plotly_chart(fig_bar, use_container_width=True)
 
-    row2_left, row2_right = st.columns(2)
-
-    with row2_left:
-        st.subheader("🏍️ Vehicle Category Share")
-        # Pie chart for segments
-        cat_share = filtered_df.groupby(cat_col)[sales_col].sum().reset_index()
-        fig_pie = px.pie(cat_share, names=cat_col, values=sales_col, hole=0.5)
+    with row1_right:
+        st.subheader("🥧 Market Distribution")
+        # Pie chart showing the spread across selected states
+        fig_pie = px.pie(filtered_df, names=state_col, values=num_cols[0], hole=0.4)
         st.plotly_chart(fig_pie, use_container_width=True)
 
-    with row2_right:
-        st.subheader("🧐 Yearly Distribution of Segments")
-        # Stacked bar for deeper EDA
-        stack_df = filtered_df.groupby([year_col, cat_col])[sales_col].sum().reset_index()
-        fig_stack = px.bar(stack_df, x=year_col, y=sales_col, color=cat_col, barmode="group")
-        st.plotly_chart(fig_stack, use_container_width=True)
+    st.divider()
 
-    # --- 6. DATA TABLE ---
-    with st.expander("📂 View Filtered Dataset"):
+    # --- 6. ADVANCED EDA: RELATIONSHIPS ---
+    st.subheader("🧐 Deep Dive: Data Distribution")
+    
+    if len(num_cols) >= 2:
+        # Scatter plot to show correlation between two metrics if available
+        fig_scatter = px.scatter(filtered_df, x=num_cols[0], y=num_cols[1], 
+                                 color=state_col, size=num_cols[0], 
+                                 hover_name=state_col, template="plotly_dark")
+        st.plotly_chart(fig_scatter, use_container_width=True)
+    else:
+        st.info("Add more columns to the CSV to see correlation analysis.")
+
+    # Show raw data at the bottom
+    with st.expander("📄 View Filtered Raw Data"):
         st.dataframe(filtered_df, use_container_width=True)
+
+else:
+    st.info("Waiting for dataset upload...")
